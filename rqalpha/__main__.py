@@ -15,18 +15,12 @@
 # limitations under the License.
 
 import click
-import datetime
 import errno
 import locale
 import os
 import shutil
-import tarfile
-import tempfile
 
-import six
-import requests
-
-from .cache_control import set_cache_policy, CachePolicy
+from .utils.cache_control import set_cache_policy, CachePolicy
 from .utils.click_helper import Date
 from .utils.i18n import localization
 from .utils.config import parse_config
@@ -46,42 +40,11 @@ def entry_point():
 @cli.command()
 @click.option('-d', '--data-bundle-path', default=os.path.expanduser("~/.rqalpha"), type=click.Path(file_okay=False))
 def update_bundle(data_bundle_path):
-    data_bundle_path = os.path.abspath(os.path.join(data_bundle_path, './bundle/'))
-    default_bundle_path = os.path.abspath(os.path.expanduser("~/.rqalpha/bundle/"))
-    if (os.path.exists(data_bundle_path) and data_bundle_path != default_bundle_path and
-            os.listdir(data_bundle_path)):
-        click.confirm('[WARNING] Target bundle path {} is not empty. The content of this folder will be REMOVED before '
-                      'updating. Are you sure to continue?'.format(data_bundle_path), abort=True)
-
-    day = datetime.date.today()
-    tmp = os.path.join(tempfile.gettempdir(), 'rq.bundle')
-
-    while True:
-        url = 'http://7xjci3.com1.z0.glb.clouddn.com/bundles_v2/rqbundle_%04d%02d%02d.tar.bz2' % (
-            day.year, day.month, day.day)
-        six.print_('try {} ...'.format(url))
-        r = requests.get(url, stream=True)
-        if r.status_code != 200:
-            day = day - datetime.timedelta(days=1)
-            continue
-
-        out = open(tmp, 'wb')
-        total_length = int(r.headers.get('content-length'))
-
-        with click.progressbar(length=total_length, label='downloading ...') as bar:
-            for data in r.iter_content(chunk_size=8192):
-                bar.update(len(data))
-                out.write(data)
-
-        out.close()
-        break
-
-    shutil.rmtree(data_bundle_path, ignore_errors=True)
-    os.makedirs(data_bundle_path)
-    tar = tarfile.open(tmp, 'r:bz2')
-    tar.extractall(data_bundle_path)
-    tar.close()
-    os.remove(tmp)
+    """
+    Sync Data Bundle
+    """
+    from . import main
+    main.update_bundle(data_bundle_path)
 
 
 @cli.command()
@@ -98,22 +61,30 @@ def update_bundle(data_bundle_path):
 @click.option('-cm', '--commission-multiplier', 'base__commission_multiplier', type=click.FLOAT)
 @click.option('-mm', '--margin-multiplier', 'base__margin_multiplier', type=click.FLOAT)
 @click.option('-k', '--kind', 'base__strategy_type', type=click.Choice(['stock', 'future', 'stock_future']))
+@click.option('-st', '--strategy-type', 'base__strategy_type', type=click.Choice(['stock', 'future', 'stock_future']))
 @click.option('-fq', '--frequency', 'base__frequency', type=click.Choice(['1d', '1m']))
 @click.option('-me', '--match-engine', 'base__matching_type', type=click.Choice(['current_bar', 'next_bar']))
 @click.option('-rt', '--run-type', 'base__run_type', type=click.Choice(['b', 'p']), default="b")
 @click.option('--resume', 'base__resume_mode', is_flag=True)
 @click.option('--handle-split/--not-handle-split', 'base__handle_split', default=None, help="handle split")
-@click.option('--risk-grid/--no-risk-grid', 'base__cal_risk_grid', default=True)
-@click.option('-l', '--log-level', 'extra__log_level', type=click.Choice(['verbose', 'debug', 'info', 'error']))
-@click.option('-p', '--plot/--no-plot', 'extra__plot', default=None, help="plot result")
-@click.option('-o', '--output-file', 'extra__output_file', type=click.Path(writable=True), help="output result pickle file")
-@click.option('--fast-match', 'validator__fast_match', is_flag=True)
+@click.option('--disable-user-system-log', 'extra__user_system_log_disabled', is_flag=True, help='disable user system log')
+@click.option('-l', '--log-level', 'extra__log_level', type=click.Choice(['verbose', 'debug', 'info', 'error', 'none']))
+@click.option('-p', '--plot/--no-plot', 'mod__analyser__plot', default=None, help="plot result")
+@click.option('--plot-save', 'mod__analyser__plot_save_file', default=None, help="save plot to file")
+@click.option('--report', 'mod__analyser__report_save_path', type=click.Path(writable=True), help="save report")
+@click.option('-o', '--output-file', 'mod__analyser__output_file', type=click.Path(writable=True),
+              help="output result pickle file")
 @click.option('--progress/--no-progress', 'mod__progress__enabled', default=None, help="show progress bar")
 @click.option('--extra-vars', 'extra__context_vars', type=click.STRING, help="override context vars")
-@click.option("--enable-profiler", "extra__enable_profiler", is_flag=True, help="add line profiler to profile your strategy")
+@click.option("--enable-profiler", "extra__enable_profiler", is_flag=True,
+              help="add line profiler to profile your strategy")
 @click.option('--config', 'config_path', type=click.STRING, help="config file path")
+@click.option('-mc', '--mod-config', 'mod_configs', nargs=2, multiple=True, type=click.STRING, help="mod extra config")
 @click.help_option('-h', '--help')
 def run(**kwargs):
+    """
+    Start to run a strategy
+    """
     if kwargs.get('base__run_type') == 'p':
         set_cache_policy(CachePolicy.MINIMUM)
 
@@ -138,7 +109,7 @@ def run(**kwargs):
 @click.option('-d', '--directory', default="./", type=click.Path(), required=True)
 def examples(directory):
     """
-    generate example strategies to target folder
+    Generate example strategies to target folder
     """
     source_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "examples")
 
@@ -155,7 +126,7 @@ def examples(directory):
 @click.option('--plot-save', 'plot_save_file', default=None, type=click.Path(), help="save plot result to file")
 def plot(result_dict_file, is_show, plot_save_file):
     """
-    draw result DataFrame
+    Draw result DataFrame
     """
     import pandas as pd
     from rqalpha.plot import plot_result
@@ -172,14 +143,13 @@ def plot(result_dict_file, is_show, plot_save_file):
 @click.argument('target_report_csv_path', type=click.Path(exists=True, writable=True), required=True)
 def report(result_pickle_file_path, target_report_csv_path):
     """
-    generate report from backtest output file
+    Generate report from backtest output file
     """
     import pandas as pd
     result_dict = pd.read_pickle(result_pickle_file_path)
 
-    from rqalpha import main
-
-    main.generate_report(result_dict, target_report_csv_path)
+    from rqalpha.utils.report import generate_report
+    generate_report(result_dict, target_report_csv_path)
 
 
 @cli.command()
@@ -191,6 +161,17 @@ def version(**kwargs):
     from rqalpha import version_info
     print("Current Version: ", version_info)
 
+
+@cli.command()
+@click.option('-d', '--directory', default="./", type=click.Path(), required=True)
+def generate_config(directory):
+    """
+    Generate default config file
+    """
+    default_config = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config_template.yml")
+    target_config_path = os.path.abspath(os.path.join(directory, 'config.yml'))
+    shutil.copy(default_config, target_config_path)
+    print("Config file has been generated in", target_config_path)
 
 if __name__ == '__main__':
     entry_point()

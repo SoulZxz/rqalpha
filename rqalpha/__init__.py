@@ -35,10 +35,10 @@ __main_version__ = "%s.%s.x" % (version_info[0], version_info[1])
 del pkgutil
 
 
-def run(config):
+def run(config, source_code=None):
     import locale
     import os
-    from .cache_control import set_cache_policy, CachePolicy
+    from .utils.cache_control import set_cache_policy, CachePolicy
     from .utils.i18n import localization
     from .utils.config import parse_config
     from . import main
@@ -58,4 +58,9 @@ def run(config):
         if os.name != 'nt':
             raise
 
-    main.run(parse_config(config, None, False))
+    return main.run(parse_config(config, click_type=False, source_code=source_code), source_code=source_code)
+
+
+def update_bundle(data_bundle_path=None, confirm=True):
+    from . import main
+    main.update_bundle(data_bundle_path, confirm)

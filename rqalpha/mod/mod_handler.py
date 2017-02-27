@@ -14,16 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import six
 from importlib import import_module
 from collections import OrderedDict
 
+from rqalpha.utils.logger import system_log
+
 
 class ModHandler(object):
-    def __init__(self, environment):
-        self._env = environment
+    def __init__(self):
+        self._env = None
         self._mod_list = []
         self._mod_dict = OrderedDict()
+
+    def set_env(self, environment):
+        self._env = environment
 
         config = environment.config
 
@@ -35,7 +39,7 @@ class ModHandler(object):
 
         self._mod_list.sort(key=lambda item: item[1].priority)
         for mod_name, mod_config in self._mod_list:
-            print('loading', mod_name)
+            system_log.debug('loading mod {}', mod_name)
             mod_module = import_module(mod_config.lib)
             mod = mod_module.load_mod()
             self._mod_dict[mod_name] = mod
@@ -47,5 +51,5 @@ class ModHandler(object):
             self._mod_dict[mod_name].start_up(self._env, mod_config)
 
     def tear_down(self, *args):
-        for _, module in six.iteritems(self._mod_dict):
-            module.tear_down(*args)
+        for mod_name, _ in reversed(self._mod_list):
+            self._mod_dict[mod_name].tear_down(*args)
